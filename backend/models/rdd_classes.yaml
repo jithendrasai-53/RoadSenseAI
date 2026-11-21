@@ -1,0 +1,20 @@
+# Road Damage Dataset (RDD2020 / Crowdsensing) Classes
+# Standard definitions according to IEEE Global Road Damage Detection Challenge
+
+names:
+  0: D00  # Longitudinal Crack (parallel to driving direction, joint distress or wheel path fatigue)
+  1: D10  # Transverse Crack (perpendicular to road axis, thermal contraction)
+  2: D20  # Alligator Crack (interconnected fatigue network resembling reptile skin)
+  3: D40  # Pothole (bowl-shaped structural cavity, severe safety hazard)
+
+descriptions:
+  D00: "Longitudinal Cracks - Linear distress running parallel to roadway centerline, typically caused by pavement joint separation or heavy vehicle wheel-load fatigue."
+  D10: "Transverse Cracks - Linear fissures perpendicular to the road centerline, primarily caused by thermal shrinkage and subgrade movement."
+  D20: "Alligator Cracks - A series of interconnected cracks forming polygonal blocks, signaling base course failure and structural fatigue."
+  D40: "Potholes - Significant surface depression or cavity caused by water infiltration and traffic-induced collapse, posing severe vehicular hazards."
+
+colors:
+  D00: "#38BDF8"  # Cyan
+  D10: "#10B981"  # Emerald Green
+  D20: "#F59E0B"  # Amber
+  D40: "#EF4444"  # Crimson Red

@@ -1,0 +1,57 @@
+{
+  "dataset": "Road Damage Detection Challenge (RDD2020)",
+  "reference": "Arya et al., IEEE BigData Challenge Benchmark",
+  "device_used_for_benchmark": "NVIDIA RTX 3090 / Intel Core i9 (Reference Benchmark)",
+  "metrics": {
+    "mAP50": 0.628,
+    "mAP50_95": 0.384,
+    "precision": 0.692,
+    "recall": 0.641,
+    "f1_score": 0.665,
+    "average_latency_ms": 18.4
+  },
+  "class_metrics": {
+    "D00": {
+      "name": "Longitudinal Crack",
+      "precision": 0.712,
+      "recall": 0.674,
+      "mAP50": 0.668,
+      "support_test_samples": 1820
+    },
+    "D10": {
+      "name": "Transverse Crack",
+      "precision": 0.684,
+      "recall": 0.621,
+      "mAP50": 0.612,
+      "support_test_samples": 1430
+    },
+    "D20": {
+      "name": "Alligator Crack",
+      "precision": 0.648,
+      "recall": 0.589,
+      "mAP50": 0.575,
+      "support_test_samples": 980
+    },
+    "D40": {
+      "name": "Pothole",
+      "precision": 0.724,
+      "recall": 0.680,
+      "mAP50": 0.657,
+      "support_test_samples": 850
+    }
+  },
+  "confusion_matrix": [
+    [1226, 95, 142, 45, 312],
+    [110, 888, 120, 24, 288],
+    [98, 82, 577, 39, 184],
+    [22, 18, 41, 578, 191]
+  ],
+  "confusion_classes": ["D00", "D10", "D20", "D40", "Background"],
+  "training_history": [
+    { "epoch": 10, "train_loss": 2.84, "val_loss": 2.91, "mAP50": 0.285 },
+    { "epoch": 25, "train_loss": 1.95, "val_loss": 2.08, "mAP50": 0.412 },
+    { "epoch": 50, "train_loss": 1.42, "val_loss": 1.56, "mAP50": 0.521 },
+    { "epoch": 75, "train_loss": 1.08, "val_loss": 1.23, "mAP50": 0.589 },
+    { "epoch": 100, "train_loss": 0.85, "val_loss": 1.05, "mAP50": 0.628 }
+  ]
+}
