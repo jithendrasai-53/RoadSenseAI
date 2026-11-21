@@ -2,8 +2,12 @@
  * API Service for Road Sense AI
  */
 
-const BACKEND_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-const API_BASE = `${BACKEND_URL}/api`;
+let rawBackendUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '');
+if (rawBackendUrl.endsWith('/api')) {
+  rawBackendUrl = rawBackendUrl.slice(0, -4);
+}
+const BACKEND_URL = rawBackendUrl;
+const API_BASE = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
 
 export async function fetchSystemStatus() {
   try {
