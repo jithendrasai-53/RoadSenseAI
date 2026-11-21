@@ -2,7 +2,8 @@
  * API Service for Road Sense AI
  */
 
-const API_BASE = '/api';
+const BACKEND_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const API_BASE = `${BACKEND_URL}/api`;
 
 export async function fetchSystemStatus() {
   try {
@@ -24,7 +25,10 @@ export async function fetchSampleCatalog() {
     const res = await fetch(`${API_BASE}/samples`);
     if (!res.ok) throw new Error(`Samples fetch returned ${res.status}`);
     const data = await res.json();
-    return data.samples || [];
+    return (data.samples || []).map(s => ({
+      ...s,
+      image_url: s.image_url?.startsWith('http') ? s.image_url : `${BACKEND_URL}${s.image_url}`
+    }));
   } catch (err) {
     console.error("Failed to fetch sample catalog:", err);
     return [];
