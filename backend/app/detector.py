@@ -60,6 +60,7 @@ def apply_nms(detections, iou_thresh=0.40):
 
 class RoadDamageDetector:
     def __init__(self):
+        import psutil
         self.hardware_info = get_system_hardware_info()
         self.device = self.hardware_info["device_type"]
         self.pothole_model = None
@@ -67,6 +68,16 @@ class RoadDamageDetector:
         self.is_model_loaded = False
         self.loaded_model_names = []
         self.load_error = None
+
+        # Detect low-memory environment (e.g. Render 512MB free tier)
+        total_ram_mb = psutil.virtual_memory().total / (1024 * 1024)
+        is_render = os.environ.get("RENDER", "").lower() in ["true", "1"]
+        self.is_low_ram = total_ram_mb < 1200 or is_render
+
+        if self.is_low_ram:
+            print(f"[!] Running in memory-constrained environment (RAM: {total_ram_mb:.0f}MB). Optimizing model footprint.")
+            torch.set_num_threads(1)
+
         self.load_models()
 
     def load_models(self):
@@ -79,7 +90,7 @@ class RoadDamageDetector:
 
         loaded_any = False
 
-        # 1. Specialized Pothole Detection Model
+        # 1. Specialized Pothole Detection Model (Lightweight YOLOv8 Nano)
         if pothole_path.exists():
             try:
                 self.pothole_model = YOLO(str(pothole_path))
@@ -90,7 +101,8 @@ class RoadDamageDetector:
                 print(f"Warning: Failed to load {pothole_path}: {e}")
 
         # 2. Road Damage Dataset Model (Cracks & Distress)
-        if rdd_path.exists():
+        # On 512MB free tiers (Render), skip the 52MB Medium model to prevent SIGKILL 137 / 502 Bad Gateway
+        if not self.is_low_ram and rdd_path.exists():
             try:
                 self.rdd_model = YOLO(str(rdd_path))
                 self.loaded_model_names.append("RDD2022-YOLOv8m")
@@ -216,113 +228,121 @@ class RoadDamageDetector:
         start_time = time.perf_counter()
         infer_device = self.device
 
+        # In low-memory cloud tiers (Render 512MB), clamp imgsz to 480 to keep RAM below cgroup limits
+        effective_imgsz = min(imgsz, 480) if self.is_low_ram else imgsz
+
         raw_detections = []
         counts = {"D00": 0, "D10": 0, "D20": 0, "D40": 0}
 
-        # 1. Run Specialized Pothole YOLO Model
-        if self.pothole_model is not None:
-            try:
-                res_pot = self.pothole_model.predict(
-                    source=img,
-                    conf=confidence_thresh,
-                    imgsz=imgsz,
-                    device=infer_device,
-                    verbose=False
-                )
-                if res_pot and len(res_pot) > 0:
-                    for idx, box in enumerate(res_pot[0].boxes):
-                        conf = float(box.conf[0].item())
-                        coords = [round(c) for c in box.xyxy[0].tolist()]
-                        x1 = max(0, min(width - 1, coords[0]))
-                        y1 = max(0, min(height - 1, coords[1]))
-                        x2 = max(0, min(width - 1, coords[2]))
-                        y2 = max(0, min(height - 1, coords[3]))
-                        
-                        box_w = max(0, x2 - x1)
-                        box_h = max(0, y2 - y1)
-                        area_pct = round(((box_w * box_h) / max(1, width * height)) * 100, 2)
+        with torch.inference_mode():
+            # 1. Run Specialized Pothole YOLO Model
+            if self.pothole_model is not None:
+                try:
+                    res_pot = self.pothole_model.predict(
+                        source=img,
+                        conf=confidence_thresh,
+                        imgsz=effective_imgsz,
+                        device=infer_device,
+                        verbose=False
+                    )
+                    if res_pot and len(res_pot) > 0:
+                        for idx, box in enumerate(res_pot[0].boxes):
+                            conf = float(box.conf[0].item())
+                            coords = [round(c) for c in box.xyxy[0].tolist()]
+                            x1 = max(0, min(width - 1, coords[0]))
+                            y1 = max(0, min(height - 1, coords[1]))
+                            x2 = max(0, min(width - 1, coords[2]))
+                            y2 = max(0, min(height - 1, coords[3]))
+                            
+                            box_w = max(0, x2 - x1)
+                            box_h = max(0, y2 - y1)
+                            area_pct = round(((box_w * box_h) / max(1, width * height)) * 100, 2)
 
-                        raw_detections.append({
-                            "id": f"det-pothole-{idx + 1}",
-                            "class_code": "D40",
-                            "class_name": "Pothole",
-                            "class_id": 3,
-                            "confidence": round(conf, 3),
-                            "bbox": [x1, y1, x2, y2],
-                            "bbox_normalized": [
-                                round(x1 / width, 4),
-                                round(y1 / height, 4),
-                                round(x2 / width, 4),
-                                round(y2 / height, 4)
-                            ],
-                            "area_percent": area_pct,
-                            "severity_grade": "Critical" if conf > 0.70 else "High"
-                        })
-            except Exception as e:
-                print(f"Pothole model inference failed on {infer_device}: {e}")
+                            raw_detections.append({
+                                "id": f"det-pothole-{idx + 1}",
+                                "class_code": "D40",
+                                "class_name": "Pothole",
+                                "class_id": 3,
+                                "confidence": round(conf, 3),
+                                "bbox": [x1, y1, x2, y2],
+                                "bbox_normalized": [
+                                    round(x1 / width, 4),
+                                    round(y1 / height, 4),
+                                    round(x2 / width, 4),
+                                    round(y2 / height, 4)
+                                ],
+                                "area_percent": area_pct,
+                                "severity_grade": "Critical" if conf > 0.70 else "High"
+                            })
+                except Exception as e:
+                    print(f"Pothole model inference failed on {infer_device}: {e}")
 
-        # 2. Run Road Damage Dataset (RDD) Model (Cracks & General Distress)
-        if self.rdd_model is not None:
-            try:
-                res_rdd = self.rdd_model.predict(
-                    source=img,
-                    conf=confidence_thresh,
-                    imgsz=imgsz,
-                    device=infer_device,
-                    verbose=False
-                )
-                if res_rdd and len(res_rdd) > 0:
-                    for idx, box in enumerate(res_rdd[0].boxes):
-                        conf = float(box.conf[0].item())
-                        cls_idx = int(box.cls[0].item())
-                        raw_name = self.rdd_model.names.get(cls_idx, f"Class {cls_idx}").lower()
-                        
-                        # Standardize RDD class codes
-                        if "pothole" in raw_name or "d40" in raw_name:
-                            class_code = "D40"
-                            class_name = "Pothole"
-                            class_id = 3
-                        elif "transverse" in raw_name or "d10" in raw_name:
-                            class_code = "D10"
-                            class_name = "Transverse Crack"
-                            class_id = 1
-                        elif "alligator" in raw_name or "d20" in raw_name:
-                            class_code = "D20"
-                            class_name = "Alligator Crack"
-                            class_id = 2
-                        else:
-                            class_code = "D00"
-                            class_name = "Longitudinal Crack"
-                            class_id = 0
+            # 2. Run Road Damage Dataset (RDD) Model (Cracks & General Distress)
+            if self.rdd_model is not None:
+                try:
+                    res_rdd = self.rdd_model.predict(
+                        source=img,
+                        conf=confidence_thresh,
+                        imgsz=effective_imgsz,
+                        device=infer_device,
+                        verbose=False
+                    )
+                    if res_rdd and len(res_rdd) > 0:
+                        for idx, box in enumerate(res_rdd[0].boxes):
+                            conf = float(box.conf[0].item())
+                            cls_idx = int(box.cls[0].item())
+                            raw_name = self.rdd_model.names.get(cls_idx, f"Class {cls_idx}").lower()
+                            
+                            # Standardize RDD class codes
+                            if "pothole" in raw_name or "d40" in raw_name:
+                                class_code = "D40"
+                                class_name = "Pothole"
+                                class_id = 3
+                            elif "transverse" in raw_name or "d10" in raw_name:
+                                class_code = "D10"
+                                class_name = "Transverse Crack"
+                                class_id = 1
+                            elif "alligator" in raw_name or "d20" in raw_name:
+                                class_code = "D20"
+                                class_name = "Alligator Crack"
+                                class_id = 2
+                            else:
+                                class_code = "D00"
+                                class_name = "Longitudinal Crack"
+                                class_id = 0
 
-                        coords = [round(c) for c in box.xyxy[0].tolist()]
-                        x1 = max(0, min(width - 1, coords[0]))
-                        y1 = max(0, min(height - 1, coords[1]))
-                        x2 = max(0, min(width - 1, coords[2]))
-                        y2 = max(0, min(height - 1, coords[3]))
-                        
-                        box_w = max(0, x2 - x1)
-                        box_h = max(0, y2 - y1)
-                        area_pct = round(((box_w * box_h) / max(1, width * height)) * 100, 2)
+                            coords = [round(c) for c in box.xyxy[0].tolist()]
+                            x1 = max(0, min(width - 1, coords[0]))
+                            y1 = max(0, min(height - 1, coords[1]))
+                            x2 = max(0, min(width - 1, coords[2]))
+                            y2 = max(0, min(height - 1, coords[3]))
+                            
+                            box_w = max(0, x2 - x1)
+                            box_h = max(0, y2 - y1)
+                            area_pct = round(((box_w * box_h) / max(1, width * height)) * 100, 2)
 
-                        raw_detections.append({
-                            "id": f"det-rdd-{idx + 1}",
-                            "class_code": class_code,
-                            "class_name": class_name,
-                            "class_id": class_id,
-                            "confidence": round(conf, 3),
-                            "bbox": [x1, y1, x2, y2],
-                            "bbox_normalized": [
-                                round(x1 / width, 4),
-                                round(y1 / height, 4),
-                                round(x2 / width, 4),
-                                round(y2 / height, 4)
-                            ],
-                            "area_percent": area_pct,
-                            "severity_grade": "High" if conf > 0.65 else "Medium"
-                        })
-            except Exception as e:
-                print(f"RDD model inference failed on {infer_device}: {e}")
+                            raw_detections.append({
+                                "id": f"det-rdd-{idx + 1}",
+                                "class_code": class_code,
+                                "class_name": class_name,
+                                "class_id": class_id,
+                                "confidence": round(conf, 3),
+                                "bbox": [x1, y1, x2, y2],
+                                "bbox_normalized": [
+                                    round(x1 / width, 4),
+                                    round(y1 / height, 4),
+                                    round(x2 / width, 4),
+                                    round(y2 / height, 4)
+                                ],
+                                "area_percent": area_pct,
+                                "severity_grade": "High" if conf > 0.65 else "Medium"
+                            })
+                except Exception as e:
+                    print(f"RDD model inference failed on {infer_device}: {e}")
+
+        # Garbage collect intermediate tensors
+        import gc
+        gc.collect()
 
         # 3. Apply Non-Maximum Suppression (NMS) to combine and deduplicate real model predictions
         final_detections = apply_nms(raw_detections, iou_thresh=0.40)
