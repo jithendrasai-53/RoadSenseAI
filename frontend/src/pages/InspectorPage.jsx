@@ -16,7 +16,7 @@ import {
 import ScanningEffect from '../components/ScanningEffect';
 import StatusBadge from '../components/StatusBadge';
 import BoundingBoxViewer from '../components/BoundingBoxViewer';
-import { detectDamage, fetchSampleCatalog } from '../services/api';
+import { detectDamage, fetchSampleCatalog, API_BASE } from '../services/api';
 import { DAMAGE_CLASSES } from '../utils/constants';
 
 export default function InspectorPage({ 
@@ -145,15 +145,21 @@ export default function InspectorPage({
           <p className="text-xs sm:text-sm text-gray-400 font-mono mt-1">
             Detect asphalt surface cracks, distress patterns, and pothole cavities via YOLO deep learning
           </p>
+          {!systemStatus?.model_loaded && (
+            <div className="mt-2 text-xs font-mono text-amber-300/90 bg-amber-950/40 border border-amber-500/30 px-3 py-1.5 rounded-lg inline-flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+              <span>Backend standby (<code className="text-white bg-black/40 px-1 py-0.5 rounded">{API_BASE}</code>). Benchmark demo mode active below.</span>
+            </div>
+          )}
         </div>
 
         {/* Runtime Badge */}
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-[#131713] border border-[#76B900]/25 font-mono text-xs flex items-center gap-2.5">
-            <Cpu className="w-4 h-4 text-[#76B900]" />
+            <span className={`w-2.5 h-2.5 rounded-full ${systemStatus?.model_loaded ? 'bg-[#76B900] shadow-[0_0_8px_#76B900]' : 'bg-amber-400 animate-pulse'}`} />
             <div>
               <span className="text-[10px] text-gray-400 block uppercase">Inference Hardware</span>
-              <span className="text-white font-bold">{deviceName.split(' ')[0]} Active</span>
+              <span className="text-white font-bold">{systemStatus?.model_loaded ? `${deviceName.split(' ')[0]} Active` : 'Offline / Standby'}</span>
             </div>
           </div>
         </div>
@@ -322,9 +328,12 @@ export default function InspectorPage({
 
             {/* Error Message */}
             {errorMessage && (
-              <div className="p-3 rounded-lg bg-red-950/30 border border-red-500/40 text-red-300 font-mono text-xs flex items-start gap-2">
+              <div className="p-3.5 rounded-xl bg-red-950/40 border border-red-500/50 text-red-200 font-mono text-xs flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                <span>{errorMessage}</span>
+                <div className="space-y-1">
+                  <span className="font-bold text-red-300 block">Connection Notice:</span>
+                  <p className="text-[11px] leading-relaxed text-red-200/90">{errorMessage}</p>
+                </div>
               </div>
             )}
 
